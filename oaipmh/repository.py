@@ -17,6 +17,9 @@ MetadataFormat = namedtuple('MetadataFormat', '''metadataPrefix schema
         metadataNamespace''')
 
 
+ResumptionToken = namedtuple('ResumptionToken', '''from_ until offset count''')
+
+
 def asdict(namedtupl):
     """Produz uma instância de ``dict`` à partir da namedtuple ``namedtupl``.
     Underscores no início ou fim do nome do atributo serão removidos.
@@ -75,6 +78,18 @@ def serialize_list_metadata_formats(repo: RepositoryMeta, oai_request: OAIReques
             }
 
     return serializers.serialize_list_metadata_formats(data)
+
+
+def encode_resumption_token(token: ResumptionToken) -> str:
+    pass
+
+
+def decode_resumption_token(token: str) -> ResumptionToken:
+    pass
+
+
+def next_resumption_token(token: str) -> str:
+    pass
 
 
 class Repository:
