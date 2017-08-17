@@ -353,11 +353,11 @@ def is_spurious_doc(doc):
         return False
 
 
-class FilteredView:
+class ArticleMetaFilteredView:
     """Um conjunto de resultados de uma consulta prévia aos registros. Algo
     similar ao conceito de View em SGBDs relacionais.
 
-    >>> bmj = datastores.FilteredView({"code_title": "0001-3714"})
+    >>> bmj = datastores.ArticleMetaFilteredView({"code_title": "0001-3714"})
     >>> [doc.ridentifier for doc in client.list(view=bmj)]
     """
     def __init__(self, term):

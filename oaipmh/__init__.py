@@ -60,7 +60,7 @@ def parse_settings(settings):
 def get_datastore(settings):
     client = datastores.get_articlemeta_client(settings['oaipmh.collection'])
     ds = datastores.ArticleMeta(client,
-            {'bjmbr': datastores.FilteredView({'code_title': '0100-879X'})})
+            {'bjmbr': datastores.ArticleMetaFilteredView({'code_title': '0100-879X'})})
     return ds
 
 
