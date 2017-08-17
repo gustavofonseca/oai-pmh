@@ -21,13 +21,13 @@ MetadataFormat = namedtuple('MetadataFormat', '''metadataPrefix schema
         metadataNamespace''')
 
 
-ResumptionToken = namedtuple('ResumptionToken', '''from_ until offset count
+ResumptionToken = namedtuple('ResumptionToken', '''set from_ until offset count
         metadataPrefix''')
 
 
 RESUMPTION_TOKEN_PATTERNS = {
-        'ListRecords': re.compile(r'^((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$'),
-        'ListIdentifiers': re.compile(r'^((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'),
+        'ListRecords': re.compile(r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$'),
+        'ListIdentifiers': re.compile(r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'),
         }
 
 
@@ -304,7 +304,7 @@ def get_resumption_token_from_request(oairequest: OAIRequest) -> ResumptionToken
 
         return decode_resumption_token(oairequest.resumptionToken)
     else:
-        return ResumptionToken(from_=oairequest.from_, until=oairequest.until,
+        return ResumptionToken(set='', from_=oairequest.from_, until=oairequest.until,
                 offset='0', count='100', metadataPrefix=oairequest.metadataPrefix)
 
 
