@@ -242,7 +242,7 @@ class Repository:
 
         try:
             return verb(oairequest)
-        except BadArgumentError:
+        except (BadArgumentError, datastores.ViewDoesNotExistError):
             return serialize_bad_argument(self.metadata, oairequest)
         except datastores.DoesNotExistError:
             return serialize_id_does_not_exist(self.metadata, oairequest)

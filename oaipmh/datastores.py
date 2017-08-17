@@ -8,6 +8,7 @@ from typing import (
         List,
         Iterable,
         Callable,
+        Dict,
         )
 
 from articlemeta import client as articlemeta_client
@@ -52,6 +53,17 @@ class DoesNotExistError(Exception):
     """
 
 
+class ViewDoesNotExistError(Exception):
+    """Quando se tenta recuperar uma view que não existe em um repositório.
+    """
+
+
+def identityview(f):
+    """Retorna a função que recebeu como argumento, inalterada.
+    """
+    return f
+
+
 class DataStore(metaclass=abc.ABCMeta):
     """Encapsula o acesso a um sistema ou recurso externo.
 
@@ -70,16 +82,31 @@ class DataStore(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
-    def list(self, view: Callable[[Callable], Callable] = identityview,
-            offset: int = 0,
-            count: int = 1000, _from: str = None, 
-            until: str = None) -> Iterable[Resource]:
-        """Produz uma coleção dos recursos contidos em todos os ``sets``.
+    def list(self, view: str=None, offset: int=0, count: int=1000,
+            _from: str=None, until: str=None) -> Iterable[Resource]:
+        """Produz uma coleção de objetos ``Resource``.
 
-        Os argumentos ``offset`` e ``count`` permitem que o a coleção seja 
-        produzida por partes.
+        Os argumentos ``offset`` e ``count`` permitem o retorno de partes
+        do resultado da consulta.
+        :param view: (opcional) identificador de uma view associada ao DataStore.
+        caso não informado, a consulta se dará sob todos os registros.
         """
         return NotImplemented
+
+    def get_view(self, name: str):
+        """Retorna a view de nome ``name`` armazenada no registro da instância.
+
+        Caso o valor de ``name`` seja ``None``, uma view identidade será
+        retornada (uma função que retorna a mesma função que recebeu como
+        argumento).
+        """
+        if name is None:
+            return identityview
+        else:
+            try:
+                return self.views[name]
+            except KeyError:
+                raise ViewDoesNotExistError() from None
 
 
 def datestamp_to_tuple(datestamp):
@@ -87,8 +114,9 @@ def datestamp_to_tuple(datestamp):
 
 
 class InMemory(DataStore):
-    def __init__(self):
+    def __init__(self, views: Dict[str, Callable]=None):
         self.data = {}
+        self.views = dict(views) if views else {}
 
     def add(self, resource):
         self.data[resource.ridentifier] = resource
@@ -99,13 +127,12 @@ class InMemory(DataStore):
         except KeyError:
             raise DoesNotExistError() from None
 
-    def list(self, sets=None, offset=0, count=1000, _from=None, until=None):
+    def list(self, view=None, offset=0, count=1000, _from=None, until=None):
         ds2tup = datestamp_to_tuple
-        sets = set(sets) if sets else set()
+        view_fn = self.get_view(view)
+        query_fn = view_fn(self.data.values)
 
-        ds = self.data.values()
-        if sets:
-            ds = (res for res in ds if sets.intersection(set(res.setspec)))
+        ds = query_fn()
         if _from:
             ds = (res for res in ds if ds2tup(res.datestamp) >= ds2tup(_from))
         if until:
@@ -338,10 +365,6 @@ class View:
 
     def __call__(self, query_fn):
         return functools.partial(query_fn, extra_filter=self.term)
-
-
-def identityview(f):
-    return f
 
 
 class ArticleMeta(DataStore):
