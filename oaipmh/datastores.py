@@ -1,10 +1,14 @@
 import abc
-from typing import List, Iterable
 from collections import namedtuple
 import itertools
 import datetime
 import functools
 import json
+from typing import (
+        List,
+        Iterable,
+        Callable,
+        )
 
 from articlemeta import client as articlemeta_client
 
@@ -66,7 +70,8 @@ class DataStore(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
-    def list(self, sets: List[str] = None, offset: int = 0,
+    def list(self, view: Callable[[Callable], Callable] = identityview,
+            offset: int = 0,
             count: int = 1000, _from: str = None, 
             until: str = None) -> Iterable[Resource]:
         """Produz uma coleção dos recursos contidos em todos os ``sets``.
