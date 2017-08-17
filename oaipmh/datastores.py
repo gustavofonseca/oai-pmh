@@ -353,11 +353,11 @@ def is_spurious_doc(doc):
         return False
 
 
-class View:
+class FilteredView:
     """Um conjunto de resultados de uma consulta prévia aos registros. Algo
-    similar ao conceito de mesmo nome de SGBDs relacionais.
+    similar ao conceito de View em SGBDs relacionais.
 
-    >>> bmj = datastores.View({"code_title": "0001-3714"})
+    >>> bmj = datastores.FilteredView({"code_title": "0001-3714"})
     >>> [doc.ridentifier for doc in client.list(sets=bmj)]
     """
     def __init__(self, term):
@@ -368,8 +368,10 @@ class View:
 
 
 class ArticleMeta(DataStore):
-    def __init__(self, client: BoundArticleMetaClient):
+    def __init__(self, client: BoundArticleMetaClient,
+            views: Dict[str, Callable]=None):
         self.client = client
+        self.views = dict(views) if views else {}
 
     def add(self, resource):
         return NotImplemented
@@ -380,8 +382,9 @@ class ArticleMeta(DataStore):
             raise DoesNotExistError()
         return ArticleResourceFacade(doc).to_resource()
 
-    def list(self, sets=identityview, offset=0, count=1000, _from=None, until=None):
-        query_fn = sets(self.client.documents)
+    def list(self, view=None, offset=0, count=1000, _from=None, until=None):
+        view_fn = self.get_view(view)
+        query_fn = view_fn(self.client.documents)
 
         docs = query_fn(offset=offset, limit=count,
                 from_date=_from, until_date=until)

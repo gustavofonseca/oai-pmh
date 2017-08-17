@@ -265,8 +265,10 @@ class Repository:
                 metadata_formatter=formatter)
 
     def _filter_records(self, token: ResumptionToken):
-        resources = self.ds.list(_from=token.from_, until=token.until,
-                offset=int(token.offset), count=int(token.count))
+        view_name = token.set or None
+        resources = self.ds.list(view=view_name, _from=token.from_,
+                until=token.until, offset=int(token.offset),
+                count=int(token.count))
         return resources
 
     @check_request_args(check_incomplete_records_list)
@@ -304,8 +306,9 @@ def get_resumption_token_from_request(oairequest: OAIRequest) -> ResumptionToken
 
         return decode_resumption_token(oairequest.resumptionToken)
     else:
-        return ResumptionToken(set='', from_=oairequest.from_, until=oairequest.until,
-                offset='0', count='100', metadataPrefix=oairequest.metadataPrefix)
+        return ResumptionToken(set=oairequest.set, from_=oairequest.from_,
+                until=oairequest.until, offset='0', count='100',
+                metadataPrefix=oairequest.metadataPrefix)
 
 
 def encode_resumption_token(token: ResumptionToken) -> str:
