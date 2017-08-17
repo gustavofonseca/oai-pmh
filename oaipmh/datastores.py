@@ -3,7 +3,8 @@ from typing import List, Iterable
 from collections import namedtuple
 import itertools
 import datetime
-
+import functools
+import json
 
 from articlemeta import client as articlemeta_client
 
@@ -171,10 +172,10 @@ class BoundArticleMetaClient:
         return self.client.document(code, self.collection)
 
     def documents(self, issn=None, from_date=None, until_date=None,
-            offset=0, limit=1000):
+            offset=0, limit=1000, extra_filter=None):
         return self.client.documents(collection=self.collection, issn=issn,
                 from_date=from_date, until_date=until_date, offset=offset,
-                limit=limit)
+                limit=limit, extra_filter=extra_filter)
 
 
 def get_articlemeta_client(collection, **kwargs):
@@ -320,6 +321,24 @@ def is_spurious_doc(doc):
         return False
 
 
+class View:
+    """Um conjunto de resultados de uma consulta prévia aos registros. Algo
+    similar ao conceito de mesmo nome de SGBDs relacionais.
+
+    >>> bmj = datastores.View({"code_title": "0001-3714"})
+    >>> [doc.ridentifier for doc in client.list(sets=bmj)]
+    """
+    def __init__(self, term):
+        self.term = json.dumps(dict(term))
+
+    def __call__(self, query_fn):
+        return functools.partial(query_fn, extra_filter=self.term)
+
+
+def identityview(f):
+    return f
+
+
 class ArticleMeta(DataStore):
     def __init__(self, client: BoundArticleMetaClient):
         self.client = client
@@ -333,8 +352,10 @@ class ArticleMeta(DataStore):
             raise DoesNotExistError()
         return ArticleResourceFacade(doc).to_resource()
 
-    def list(self, sets=None, offset=0, count=1000, _from=None, until=None):
-        docs = self.client.documents(offset=offset, limit=count,
+    def list(self, sets=identityview, offset=0, count=1000, _from=None, until=None):
+        query_fn = sets(self.client.documents)
+
+        docs = query_fn(offset=offset, limit=count,
                 from_date=_from, until_date=until)
         return (ArticleResourceFacade(doc).to_resource()
                 for doc in docs)
