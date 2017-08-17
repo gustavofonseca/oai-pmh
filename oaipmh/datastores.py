@@ -358,7 +358,7 @@ class FilteredView:
     similar ao conceito de View em SGBDs relacionais.
 
     >>> bmj = datastores.FilteredView({"code_title": "0001-3714"})
-    >>> [doc.ridentifier for doc in client.list(sets=bmj)]
+    >>> [doc.ridentifier for doc in client.list(view=bmj)]
     """
     def __init__(self, term):
         self.term = json.dumps(dict(term))
