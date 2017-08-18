@@ -4,7 +4,7 @@ import operator
 from typing import Iterable
 from collections import namedtuple
 
-from oaipmh import serializers, datastores
+from oaipmh import serializers, datastores, sets
 from oaipmh.formatters import oai_dc
 
 
@@ -28,6 +28,7 @@ ResumptionToken = namedtuple('ResumptionToken', '''set from_ until offset count
 RESUMPTION_TOKEN_PATTERNS = {
         'ListRecords': re.compile(r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$'),
         'ListIdentifiers': re.compile(r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'),
+        'ListSets': re.compile(r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'),
         }
 
 
@@ -104,6 +105,24 @@ def serialize_list_metadata_formats(repo: RepositoryMeta, oai_request: OAIReques
             }
 
     return serializers.serialize_list_metadata_formats(data)
+
+
+def serialize_list_sets(repo: RepositoryMeta, oai_request: OAIRequest,
+        sets: Iterable[sets.Set],
+        resumption_token: ResumptionToken,) -> bytes:
+
+    if resumption_token is None:
+        encoded_resumption_token = ''
+    else:
+        encoded_resumption_token = encode_resumption_token(resumption_token)
+
+    data = {
+            'repository': asdict(repo),
+            'request': asdict(oai_request),
+            'sets': [asdict(s) for s in sets],
+            'resumptionToken': encoded_resumption_token,
+            }
+    return serializers.serialize_list_sets(data)
 
 
 def serialize_bad_verb(repo: RepositoryMeta, oai_request: OAIRequest) -> bytes:
@@ -215,6 +234,15 @@ def check_incomplete_identifiers_list(detected_args):
         return True
 
 
+def check_incomplete_sets_list(detected_args):
+    args = set(detected_args)
+    if 'verb' not in args:
+        return False
+    else:
+        return not any((operator.contains(args, arg)
+                        for arg in ['from', 'until', 'set']))
+
+
 class Repository:
     def __init__(self, metadata: RepositoryMeta, ds: datastores.DataStore):
         self.metadata = metadata
@@ -226,6 +254,7 @@ class Repository:
                 'ListRecords': self._list_records,
                 'ListIdentifiers': self._list_identifiers,
                 'ListMetadataFormats': self._list_metadata_formats,
+                'ListSets': self._list_sets,
                 }
 
     def add_metadataformat(self, metadata: MetadataFormat, formatter):
@@ -296,6 +325,15 @@ class Repository:
     def _list_metadata_formats(self, oairequest):
         fmts = [fmt['metadata'] for fmt in self.formats.values()]
         return serialize_list_metadata_formats(self.metadata, oairequest, fmts)
+
+    @check_request_args(check_incomplete_sets_list)
+    def _list_sets(self, oairequest):
+        token = get_resumption_token_from_request(oairequest)
+        sets_list = list(sets.get_sets_on_journals(self.ds, offset=int(token.offset),
+                count=int(token.count)))
+        next_token = next_resumption_token(token, sets_list)
+        return serialize_list_sets(self.metadata, oairequest, sets_list,
+                next_token)
 
 
 def get_resumption_token_from_request(oairequest: OAIRequest) -> ResumptionToken:

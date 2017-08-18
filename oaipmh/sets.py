@@ -13,4 +13,27 @@ Deve ser possível:
   * Consultar os registros contidos em um conjunto;
   
 """
+from collections import namedtuple, OrderedDict
+
+
+Set = namedtuple('Set', '''setSpec setName''')
+
+
+#SETS_REGISTRY = OrderedDict([
+#    ('0100-879X', {'meta': Set(setSpec='0100-879X', setName='Brazilian Journal of Medical and Biological Research', setDescription=''), 'view': lambda x: x}),
+#    ])
+
+def get_sets_on_journals(ds, offset, count):
+    journals = ds.list_journals(offset, count)
+    return map_journals_to_sets(journals)
+
+
+def map_journals_to_sets(journals):
+    return (Set(setSpec=j.lead_issn, setName=j.title) for j in journals) 
+
+
+def get_view_for_journal_set(set_):
+    from oaipmh.datastores import ArticleMetaFilteredView
+    view = ArticleMetaFilteredView({'code_title': set_.lead_issn})
+    return view
 
