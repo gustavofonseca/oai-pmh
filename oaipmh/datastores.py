@@ -48,6 +48,9 @@ Resource = namedtuple('Resource', '''ridentifier datestamp setspec title
         identifier source language relation rights''')
 
 
+Journal = namedtuple('Journal', '''title lead_issn''')
+
+
 class DoesNotExistError(Exception):
     """Quando nenhum recurso corresponde ao ``ridentifier`` informado.
     """
@@ -191,6 +194,40 @@ class SliceableResultSetThriftClient(articlemeta_client.ThriftClient):
                 )
                 yield document
 
+    def __journals_ids(self, collection=None, issn=None, limit=None,
+            offset=None):
+        limit = limit or articlemeta_client.LIMIT
+        offset = offset or 0
+
+        try:
+            with self.client_context() as client:
+                identifiers = client.get_journal_identifiers(
+                    collection=collection, issn=issn,
+                    limit=limit, offset=offset)
+        except self.ARTICLEMETA_THRIFT.ServerError:
+            msg = 'Error retrieving list of journals identifiers: %s_%s' % (collection, issn)
+            raise articlemeta_client.ServerError(msg)
+
+        if len(identifiers) == 0:
+            return
+
+        for identifier in identifiers:
+            yield identifier
+
+    def journals(self, collection=None, issn=None, only_identifiers=False,
+            limit=None, offset=None):
+        identifiers = self.__journals_ids(collection=collection, issn=issn,
+                limit=limit, offset=offset)
+        for identifier in identifiers:
+            if only_identifiers:
+                yield identifier
+            else:
+                journal = self.journal(
+                    identifier.code,
+                    identifier.collection,
+                )
+                yield journal
+
 
 class BoundArticleMetaClient:
     """Cliente da API ArticleMeta cujas consultas são vinculadas ao conteúdo
@@ -208,6 +245,11 @@ class BoundArticleMetaClient:
         return self.client.documents(collection=self.collection, issn=issn,
                 from_date=from_date, until_date=until_date, offset=offset,
                 limit=limit, extra_filter=extra_filter)
+
+    def journals(self, issn=None, only_identifiers=False, limit=None,
+            offset=None):
+        return self.client.journals(collection=self.collection, issn=issn,
+                only_identifiers=only_identifiers, offset=offset, limit=limit)
 
 
 def get_articlemeta_client(collection, **kwargs):
@@ -341,6 +383,15 @@ class ArticleResourceFacade:
                         rights=self.rights())
 
 
+def journal_from_articlemeta(journal):
+    """Produz uma instância de ``Journal`` com base em ``journal``.
+
+    :param journal: instância de ``xylose.scielodocument.Journal``.
+    """
+    return Journal(title=journal.title,
+                   lead_issn=journal.scielo_issn)
+
+
 def is_spurious_doc(doc):
     """Instâncias de ``xylose.scielodocument.Article`` são produzidas pelo
     articlemetaapi mesmo para consultas a documentos que não existem.
@@ -390,4 +441,8 @@ class ArticleMeta(DataStore):
                 from_date=_from, until_date=until)
         return (ArticleResourceFacade(doc).to_resource()
                 for doc in docs)
+
+    def list_journals(self, offset=0, count=1000):
+        journals = self.client.journals(offset=offset, limit=count)
+        return (journal_from_articlemeta(j) for j in journals)
 
