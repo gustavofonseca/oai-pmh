@@ -21,8 +21,8 @@ METADATA_FORMATS = [
 
 
 STATIC_SETS = [
-        (sets.Set(setSpec='bjmbr', setName='Artigos da BJMBR'),
-         datastores.ArticleMetaFilteredView({'code_title': '0100-879X'})),
+        (sets.Set(setSpec='openaire', setName='OpenAIRE'),
+         datastores.identityview),
         ]
 
 

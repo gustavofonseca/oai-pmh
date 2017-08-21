@@ -339,7 +339,7 @@ class Repository:
     @check_request_args(check_incomplete_sets_list)
     def _list_sets(self, oairequest):
         token = get_resumption_token_from_request(oairequest)
-        sets_list = list(self.setsreg.list())
+        sets_list = list(self.setsreg.list(int(token.offset), int(token.count)))
         next_token = next_resumption_token(token, sets_list)
         return serialize_list_sets(self.metadata, oairequest, sets_list,
                 next_token)

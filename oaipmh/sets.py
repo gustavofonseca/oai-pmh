@@ -14,6 +14,7 @@ Deve ser possível:
   
 """
 from collections import namedtuple, OrderedDict
+import itertools
 
 
 Set = namedtuple('Set', '''setSpec setName''')
@@ -27,17 +28,33 @@ class SetsRegistry:
     """
     def __init__(self, ds, static_defs):
         self.ds = ds
-        self.static_defs = static_defs
+        self.static_sets = list(get_sets_on_statics(static_defs))
         self.static_views = {s.setSpec: v for s, v in static_defs}
 
-    def list(self):
-        return get_sets_on_statics(self.static_defs)
+    def list(self, offset, count):
+        static_part = self.static_sets[offset:offset+count]
+        if len(static_part) < count:
+            dynamic_part = get_sets_on_journals(self.ds,
+                    translate_virtual_offset(len(self.static_sets), offset),
+                    count - len(static_part))
+        else:
+            dynamic_part = []
+
+        return itertools.chain(static_part, dynamic_part)
 
     def get(self, name):
         pass
 
     def get_view(self, name):
         return self.static_views.get(name)
+
+
+def translate_virtual_offset(size, offset):
+    real_offset = offset - size 
+    if real_offset <= 0:
+        return 0
+    else:
+        return real_offset
 
 
 def get_sets_on_statics(statics):

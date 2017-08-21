@@ -236,6 +236,9 @@ class BoundArticleMetaClient:
         return self.client.journals(collection=self.collection, issn=issn,
                 only_identifiers=only_identifiers, offset=offset, limit=limit)
 
+    def journal(self, code):
+        return self.client.journal(code, self.collection)
+
 
 def get_articlemeta_client(collection, **kwargs):
     """Retorna um cliente do serviço ArticleMeta otimizado e adaptado para
