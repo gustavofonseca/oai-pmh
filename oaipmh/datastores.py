@@ -85,31 +85,16 @@ class DataStore(metaclass=abc.ABCMeta):
         return NotImplemented
 
     @abc.abstractmethod
-    def list(self, view: str=None, offset: int=0, count: int=1000,
+    def list(self, view: Callable=None, offset: int=0, count: int=1000,
             _from: str=None, until: str=None) -> Iterable[Resource]:
         """Produz uma coleção de objetos ``Resource``.
 
         Os argumentos ``offset`` e ``count`` permitem o retorno de partes
         do resultado da consulta.
-        :param view: (opcional) identificador de uma view associada ao DataStore.
-        caso não informado, a consulta se dará sob todos os registros.
+        :param view: (opcional) função de ordem superior para a filtragem de 
+        registros. caso não informada, a consulta se dará sob todos os registros.
         """
         return NotImplemented
-
-    def get_view(self, name: str):
-        """Retorna a view de nome ``name`` armazenada no registro da instância.
-
-        Caso o valor de ``name`` seja ``None``, uma view identidade será
-        retornada (uma função que retorna a mesma função que recebeu como
-        argumento).
-        """
-        if name is None:
-            return identityview
-        else:
-            try:
-                return self.views[name]
-            except KeyError:
-                raise ViewDoesNotExistError() from None
 
 
 def datestamp_to_tuple(datestamp):
@@ -132,7 +117,7 @@ class InMemory(DataStore):
 
     def list(self, view=None, offset=0, count=1000, _from=None, until=None):
         ds2tup = datestamp_to_tuple
-        view_fn = self.get_view(view)
+        view_fn = view or identityview
         query_fn = view_fn(self.data.values)
 
         ds = query_fn()
@@ -419,10 +404,8 @@ class ArticleMetaFilteredView:
 
 
 class ArticleMeta(DataStore):
-    def __init__(self, client: BoundArticleMetaClient,
-            views: Dict[str, Callable]=None):
+    def __init__(self, client: BoundArticleMetaClient):
         self.client = client
-        self.views = dict(views) if views else {}
 
     def add(self, resource):
         return NotImplemented
@@ -434,7 +417,7 @@ class ArticleMeta(DataStore):
         return ArticleResourceFacade(doc).to_resource()
 
     def list(self, view=None, offset=0, count=1000, _from=None, until=None):
-        view_fn = self.get_view(view)
+        view_fn = view or identityview
         query_fn = view_fn(self.client.documents)
 
         docs = query_fn(offset=offset, limit=count,

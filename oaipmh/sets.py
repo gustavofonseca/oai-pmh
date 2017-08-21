@@ -19,17 +19,38 @@ from collections import namedtuple, OrderedDict
 Set = namedtuple('Set', '''setSpec setName''')
 
 
-#SETS_REGISTRY = OrderedDict([
-#    ('0100-879X', {'meta': Set(setSpec='0100-879X', setName='Brazilian Journal of Medical and Biological Research', setDescription=''), 'view': lambda x: x}),
-#    ])
+class SetsRegistry:
+    """Representa o registro de conjuntos de registros disponíveis.
+
+    :param static_defs: lista associativa que contém objetos ``Set`` e
+    referências a suas funções ``view``.
+    """
+    def __init__(self, ds, static_defs):
+        self.ds = ds
+        self.static_defs = static_defs
+        self.static_views = {s.setSpec: v for s, v in static_defs}
+
+    def list(self):
+        return get_sets_on_statics(self.static_defs)
+
+    def get(self, name):
+        pass
+
+    def get_view(self, name):
+        return self.static_views.get(name)
+
+
+def get_sets_on_statics(statics):
+    return (s for s, _ in statics)
+
 
 def get_sets_on_journals(ds, offset, count):
     journals = ds.list_journals(offset, count)
-    return map_journals_to_sets(journals)
+    return (map_journal_to_set(j) for j in journals)
 
 
-def map_journals_to_sets(journals):
-    return (Set(setSpec=j.lead_issn, setName=j.title) for j in journals) 
+def map_journal_to_set(journal):
+    return Set(setSpec=journal.lead_issn, setName=journal.title)
 
 
 def get_view_for_journal_set(set_):

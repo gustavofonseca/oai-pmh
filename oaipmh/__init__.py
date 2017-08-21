@@ -7,6 +7,7 @@ from oaipmh import (
         repository,
         datastores,
         formatters,
+        sets,
         )
 
 
@@ -16,6 +17,12 @@ METADATA_FORMATS = [
             schema='http://www.openarchives.org/OAI/2.0/oai_dc.xsd',
             metadataNamespace='http://www.openarchives.org/OAI/2.0/oai_dc/'),
          formatters.oai_dc.make_metadata),
+        ]
+
+
+STATIC_SETS = [
+        (sets.Set(setSpec='bjmbr', setName='Artigos da BJMBR'),
+         datastores.ArticleMetaFilteredView({'code_title': '0100-879X'})),
         ]
 
 
@@ -59,9 +66,7 @@ def parse_settings(settings):
 
 def get_datastore(settings):
     client = datastores.get_articlemeta_client(settings['oaipmh.collection'])
-    ds = datastores.ArticleMeta(client,
-            {'bjmbr': datastores.ArticleMetaFilteredView({'code_title': '0100-879X'})})
-    return ds
+    return datastores.ArticleMeta(client)
 
 
 def get_repository_meta(settings):
@@ -78,8 +83,10 @@ def get_repository_meta(settings):
 
 def add_oai_repository(event):
     settings = event.request.registry.settings
+    ds = get_datastore(settings)
+
     event.request.repository = repository.Repository(
-            settings['repository_meta'], get_datastore(settings))
+            settings['repository_meta'], ds, sets.SetsRegistry(ds, STATIC_SETS))
 
     for metadata, formatter in METADATA_FORMATS:
         event.request.repository.add_metadataformat(metadata, formatter)

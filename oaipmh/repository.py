@@ -185,6 +185,11 @@ class BadResumptionTokenError(Exception):
     """
 
 
+class SetNameError(Exception):
+    """Lançada quando se tenta obter a view de um set inexistente.
+    """
+
+
 class check_request_args:
     """Valida os argumentos da requisição de acordo com as regras de cada verbo.
 
@@ -244,9 +249,11 @@ def check_incomplete_sets_list(detected_args):
 
 
 class Repository:
-    def __init__(self, metadata: RepositoryMeta, ds: datastores.DataStore):
+    def __init__(self, metadata: RepositoryMeta, ds: datastores.DataStore,
+            setsreg: sets.SetsRegistry):
         self.metadata = metadata
         self.ds = ds
+        self.setsreg = setsreg
         self.formats = {}
         self.verbs = {
                 'Identify': self._identify,
@@ -271,7 +278,7 @@ class Repository:
 
         try:
             return verb(oairequest)
-        except (BadArgumentError, datastores.ViewDoesNotExistError):
+        except (BadArgumentError, SetNameError):
             return serialize_bad_argument(self.metadata, oairequest)
         except datastores.DoesNotExistError:
             return serialize_id_does_not_exist(self.metadata, oairequest)
@@ -294,8 +301,11 @@ class Repository:
                 metadata_formatter=formatter)
 
     def _filter_records(self, token: ResumptionToken):
-        view_name = token.set or None
-        resources = self.ds.list(view=view_name, _from=token.from_,
+        view = self.setsreg.get_view(token.set)
+        if view is None:
+            raise SetNameError('Cannot find a view for set "%s"', token.set)
+
+        resources = self.ds.list(view=view, _from=token.from_,
                 until=token.until, offset=int(token.offset),
                 count=int(token.count))
         return resources
@@ -329,8 +339,7 @@ class Repository:
     @check_request_args(check_incomplete_sets_list)
     def _list_sets(self, oairequest):
         token = get_resumption_token_from_request(oairequest)
-        sets_list = list(sets.get_sets_on_journals(self.ds, offset=int(token.offset),
-                count=int(token.count)))
+        sets_list = list(self.setsreg.list())
         next_token = next_resumption_token(token, sets_list)
         return serialize_list_sets(self.metadata, oairequest, sets_list,
                 next_token)
