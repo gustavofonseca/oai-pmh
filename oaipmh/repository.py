@@ -14,6 +14,7 @@ from . import (
         datastores,
         sets,
         exceptions,
+        utils,
         )
 from .entities import (
         RepositoryMeta,
@@ -433,13 +434,14 @@ class Repository:
             if oairequest.metadataPrefix not in self.formats:
                 raise exceptions.CannotDisseminateFormatError()
 
-        token = self.resumption_token_factory.new_from_request(
-                oairequest, self.listslen)
-        fmt = self.formats[token.metadataPrefix]
-        resources = list((fmt['augmenter'](r)
-                          for r in self.query_resources_by_token(token)))
+        resultset = ListRecords(oairequest=oairequest, ds=self.ds,
+                setsreg=self.setsreg, listslen=self.listslen,
+                granularity_validator=self.granularity_validator,
+                resumption_token_factory=self.resumption_token_factory)
+        fmt = resultset.select_format(self.formats)
+        resources = [fmt['augmenter'](r) for r in resultset.data]
 
-        next_token = token.next(resources)
+        next_token = resultset.next_resumption_token()
         return serialize_list_records(self.metadata, oairequest, resources,
                 next_token, metadata_formatter=fmt['formatter'])
 
@@ -490,4 +492,90 @@ def clean_oairequest_dates(oairequest: OAIRequest, validator):
     if oairequest.until and not validator(oairequest.until):
         new_values['until'] = None
     return oairequest._replace(**new_values)
+
+
+class ListRecords:
+    """Representa o comportamento associado ao verbo *ListRecords* do protocolo
+    OAI-PMH.
+    """
+    def __init__(self, oairequest: OAIRequest, ds:datastores.DataStore,
+            setsreg: sets.SetsRegistry, listslen: int,
+            granularity_validator: Callable,
+            resumption_token_factory=ResumptionToken):
+        self.oairequest = oairequest
+        self.ds = ds
+        self.setsreg = setsreg
+        self.listslen = listslen
+        self.granularity_validator = granularity_validator
+        self.resumption_token_factory = resumption_token_factory
+        self.current_resumption_token = self._current_resumption_token()
+
+    def _current_resumption_token(self):
+        """Resumption token para obter o conjunto de dados atual.
+        """
+        return self.resumption_token_factory.new_from_request(
+                self.oairequest, self.listslen)
+
+    def next_resumption_token(self):
+        """Resumption token para obter o conjunto de dados subsequente.
+        """
+        return self.current_resumption_token.next(self.data)
+
+    def select_format(self, formats):
+        """Seleciona, dentre a coleção ``formats``, o formato que deve ser
+        aplicado ao conjunto de dados.
+        """
+        token = self.current_resumption_token
+        return formats[token.metadataPrefix]
+
+    def get_query_view(self):
+        """Obtém a função-view associada à requisição. Retorna ``None`` caso
+        nenhuma tenha sido especificada no *resumption token*. Levanta
+        ``exceptions.BadArgumentError`` no caso de um nome desconhecido.
+        """
+        token = self.current_resumption_token
+        if token.set:
+            view = self.setsreg.get_view(token.set)
+            if view is None:
+                raise exceptions.BadArgumentError('cannot find a view for set "%s"', token.set)
+        else:
+            view = None
+
+        return view
+
+    def ensure_datestamps_are_valid(self):
+        """Garante que a granularidade e intervalos das datas ``from_`` e
+        ``until`` são válidos. Levanta ``exceptions.BadArgumentError`` caso
+        algum valor não seja válido; no caso contrário retorna ``None``.
+        """
+        token = self.current_resumption_token
+        if token.from_ and not self.granularity_validator(token.from_):
+            raise exceptions.BadArgumentError('invalid granularity')
+
+        if token.until and not self.granularity_validator(token.until):
+            raise exceptions.BadArgumentError('invalid granularity')
+
+        if (token.from_ and token.until) and (token.from_ > token.until):
+            raise exceptions.BadArgumentError('invalid range for datestamps')
+
+    def query_resources_by_token(self):
+        token = self.current_resumption_token
+        view = self.get_query_view()
+
+        return self.query_resources(int(token.offset), int(token.count),
+                view=view, _from=token.from_, until=token.until)
+
+    def query_resources(self, offset: int, count: int,
+            view: Callable[[Callable], Callable], _from: str, until: str):
+        return self.ds.list(offset, count, view=view, _from=_from,
+                until=until)
+
+    @utils.lazyproperty
+    def data(self):
+        self.ensure_datestamps_are_valid()
+        resources = [res for res in self.query_resources_by_token()]
+        if not self.current_resumption_token.has_previous() and is_empty_resultset(resources):
+            raise exceptions.NoRecordsMatchError()
+
+        return resources
 

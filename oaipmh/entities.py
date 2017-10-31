@@ -70,6 +70,7 @@ class ResumptionToken:
             'ListIdentifiers': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$',
             'ListSets': r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$',
             }
+    first_offset = '0'
 
     def __init__(self, **kwargs):
         for attr in self.attrs:
@@ -94,10 +95,14 @@ class ResumptionToken:
                 raise exceptions.BadResumptionTokenError('token count is different than ``oaipmh.listslen``')
         else:
             token = cls(set=oairequest.set, from_=oairequest.from_,
-                    until=oairequest.until, offset='0', count=str(default_count),
+                    until=oairequest.until, offset=cls.first_offset,
+                    count=str(default_count),
                     metadataPrefix=oairequest.metadataPrefix)
 
         return token
+
+    def has_previous(self):
+        return self.first_offset != self.offset
 
     @classmethod
     def decode(cls: Type[TResumptionToken], token: str) -> TResumptionToken:
