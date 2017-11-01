@@ -66,11 +66,10 @@ Set = namedtuple('Set', '''setSpec setName''')
 class ResumptionToken:
     attrs = ['set', 'from_', 'until', 'offset', 'count', 'metadataPrefix']
     token_patterns = {
-            'ListRecords': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$',
+            'ListRecords': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$',
             'ListIdentifiers': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$',
             'ListSets': r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$',
             }
-    first_offset = '0'
 
     def __init__(self, **kwargs):
         for attr in self.attrs:
@@ -95,14 +94,34 @@ class ResumptionToken:
                 raise exceptions.BadResumptionTokenError('token count is different than ``oaipmh.listslen``')
         else:
             token = cls(set=oairequest.set, from_=oairequest.from_,
-                    until=oairequest.until, offset=cls.first_offset,
+                    until=oairequest.until, offset=cls.first_offset(oairequest),
                     count=str(default_count),
                     metadataPrefix=oairequest.metadataPrefix)
 
         return token
 
     def has_previous(self):
-        return self.first_offset != self.offset
+        return self.first_offset(self) != self.offset
+
+    @classmethod
+    def first_offset(cls, timesliceable_object):
+        """Obtém a posição inicial do cursor à partir de um objeto capaz de
+        descrever um intervalo de tempo.
+        """
+        return '%s(0)' % (timesliceable_object.from_ or '1998-01-01')
+
+    def queryable_offset(self):
+        skip = slice(self.offset.index('(') + 1, -1)
+        return int(self.offset[skip])
+
+    def queryable_from(self):
+        date = slice(0, 10)
+        return self.offset[date]
+
+    def queryable_until(self):
+        year = slice(0, 4)
+        ref_date = self.queryable_from()
+        return ref_date[year] + '-12-31'
 
     @classmethod
     def decode(cls: Type[TResumptionToken], token: str) -> TResumptionToken:
@@ -158,8 +177,8 @@ class ResumptionToken:
         """Avança o offset do token.
         """
         token_map = self._asdict()
-        new_offset = 1 + int(token_map['offset']) + int(token_map['count'])
-        token_map['offset'] = str(new_offset)
+        new_offset = 1 + self.queryable_offset() + int(token_map['count'])
+        token_map['offset'] = '%s(%s)' % (self.queryable_from(), new_offset)
         return self.__class__(**token_map)
 
     def next(self, resources: Iterable) -> TResumptionToken:

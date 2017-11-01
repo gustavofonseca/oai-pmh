@@ -558,10 +558,10 @@ class ResultPage:
             raise exceptions.BadArgumentError('invalid range for datestamps')
 
     def query_resources_by_token(self):
-        token = self.current_resumption_token
+        token = TokenQueryParams(self.current_resumption_token)
         view = self.get_query_view()
 
-        return self.query_resources(int(token.offset), int(token.count),
+        return self.query_resources(token.offset, token.count,
                 view=view, _from=token.from_, until=token.until)
 
     def query_resources(self, offset: int, count: int,
@@ -577,4 +577,22 @@ class ResultPage:
             raise exceptions.NoRecordsMatchError()
 
         return resources
+
+
+class TokenQueryParams:
+    def __init__(self, token):
+        self.token = token
+        self.count = int(token.count)
+
+    @property
+    def offset(self):
+        return self.token.queryable_offset()
+
+    @property
+    def from_(self):
+        return self.token.queryable_from()
+
+    @property
+    def until(self):
+        return self.token.queryable_until()
 
