@@ -434,14 +434,14 @@ class Repository:
             if oairequest.metadataPrefix not in self.formats:
                 raise exceptions.CannotDisseminateFormatError()
 
-        resultset = ListRecords(oairequest=oairequest, ds=self.ds,
+        resultpage = ResultPage(oairequest=oairequest, ds=self.ds,
                 setsreg=self.setsreg, listslen=self.listslen,
                 granularity_validator=self.granularity_validator,
                 resumption_token_factory=self.resumption_token_factory)
-        fmt = resultset.select_format(self.formats)
-        resources = [fmt['augmenter'](r) for r in resultset.data]
+        fmt = resultpage.select_format(self.formats)
+        resources = [fmt['augmenter'](r) for r in resultpage.data]
 
-        next_token = resultset.next_resumption_token()
+        next_token = resultpage.next_resumption_token()
         return serialize_list_records(self.metadata, oairequest, resources,
                 next_token, metadata_formatter=fmt['formatter'])
 
@@ -494,9 +494,8 @@ def clean_oairequest_dates(oairequest: OAIRequest, validator):
     return oairequest._replace(**new_values)
 
 
-class ListRecords:
-    """Representa o comportamento associado ao verbo *ListRecords* do protocolo
-    OAI-PMH.
+class ResultPage:
+    """Representa uma página de resultados de uma consulta.
     """
     def __init__(self, oairequest: OAIRequest, ds:datastores.DataStore,
             setsreg: sets.SetsRegistry, listslen: int,
