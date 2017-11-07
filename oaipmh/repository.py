@@ -7,6 +7,7 @@ from typing import (
         Callable,
         )
 import urllib.parse
+from datetime import datetime
 
 from .formatters import oai_dc
 from . import (
@@ -437,6 +438,7 @@ class Repository:
         resultpage = ResultPage(oairequest=oairequest, ds=self.ds,
                 setsreg=self.setsreg, listslen=self.listslen,
                 granularity_validator=self.granularity_validator,
+                earliest_datestamp=self.metadata.earliestDatestamp,
                 resumption_token_factory=self.resumption_token_factory)
         fmt = resultpage.select_format(self.formats)
         resources = [fmt['augmenter'](r) for r in resultpage.data]
@@ -494,26 +496,43 @@ def clean_oairequest_dates(oairequest: OAIRequest, validator):
     return oairequest._replace(**new_values)
 
 
+def now_datestamp():
+    return datetime.today().isoformat()[:10]
+
+
 class ResultPage:
     """Representa uma página de resultados de uma consulta.
     """
     def __init__(self, oairequest: OAIRequest, ds:datastores.DataStore,
             setsreg: sets.SetsRegistry, listslen: int,
             granularity_validator: Callable,
-            resumption_token_factory=ResumptionToken):
+            earliest_datestamp: str,
+            resumption_token_factory=ResumptionToken,
+            make_default_until=now_datestamp):
         self.oairequest = oairequest
         self.ds = ds
         self.setsreg = setsreg
         self.listslen = listslen
         self.granularity_validator = granularity_validator
         self.resumption_token_factory = resumption_token_factory
+        self.earliest_datestamp = earliest_datestamp
+        self.make_default_until = make_default_until
+
+        # deve ser executado por último
         self.current_resumption_token = self._current_resumption_token()
 
     def _current_resumption_token(self):
         """Resumption token para obter o conjunto de dados atual.
         """
-        return self.resumption_token_factory.new_from_request(
-                self.oairequest, self.listslen, '1998-01-01', '2017-11-07')
+        earliest_datestamp = self.earliest_datestamp
+        try:
+            default_from = earliest_datestamp.strftime('%Y-%m-%d')
+        except AttributeError:
+            default_from = earliest_datestamp
+
+        return self.resumption_token_factory.new_from_request(self.oairequest,
+                self.listslen, default_from=default_from,
+                default_until=self.make_default_until())
 
     def next_resumption_token(self):
         """Resumption token para obter o conjunto de dados subsequente.

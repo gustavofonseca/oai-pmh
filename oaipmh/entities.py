@@ -64,7 +64,7 @@ Resource = namedtuple('Resource', '''ridentifier datestamp setspec title
 Set = namedtuple('Set', '''setSpec setName''')
 
 
-_REGEXP_LISTRECORDS = r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
+_REGEXP_LISTRECORDS = r'^([\w-]+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
 _REGEXP_LISTIDENTIFIERS = r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
 _REGEXP_LISTSETS = r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'
 
