@@ -518,9 +518,7 @@ class ResultPage:
         self.earliest_datestamp = earliest_datestamp
         self.make_default_until = make_default_until
 
-        # deve ser executado por último
-        self.current_resumption_token = self._current_resumption_token()
-
+    @utils.lazyproperty
     def _current_resumption_token(self):
         """Resumption token para obter o conjunto de dados atual.
         """
@@ -537,21 +535,21 @@ class ResultPage:
     def next_resumption_token(self):
         """Resumption token para obter o conjunto de dados subsequente.
         """
-        return self.current_resumption_token.next(self.data)
+        return self._current_resumption_token.next(self.data)
 
     def select_format(self, formats):
         """Seleciona, dentre a coleção ``formats``, o formato que deve ser
         aplicado ao conjunto de dados.
         """
-        token = self.current_resumption_token
+        token = self._current_resumption_token
         return formats[token.metadataPrefix]
 
-    def get_query_view(self):
+    def _get_query_view(self):
         """Obtém a função-view associada à requisição. Retorna ``None`` caso
         nenhuma tenha sido especificada no *resumption token*. Levanta
         ``exceptions.BadArgumentError`` no caso de um nome desconhecido.
         """
-        token = self.current_resumption_token
+        token = self._current_resumption_token
         if token.set:
             view = self.setsreg.get_view(token.set)
             if view is None:
@@ -561,12 +559,12 @@ class ResultPage:
 
         return view
 
-    def ensure_datestamps_are_valid(self):
+    def _ensure_datestamps_are_valid(self):
         """Garante que a granularidade e intervalos das datas ``from_`` e
         ``until`` são válidos. Levanta ``exceptions.BadArgumentError`` caso
         algum valor não seja válido; no caso contrário retorna ``None``.
         """
-        token = self.current_resumption_token
+        token = self._current_resumption_token
         if token.from_ and not self.granularity_validator(token.from_):
             raise exceptions.BadArgumentError('invalid granularity')
 
@@ -576,24 +574,24 @@ class ResultPage:
         if (token.from_ and token.until) and (token.from_ > token.until):
             raise exceptions.BadArgumentError('invalid range for datestamps')
 
-    def query_resources_by_token(self):
-        token = self.current_resumption_token
-        view = self.get_query_view()
+    def _query_resources_by_token(self):
+        token = self._current_resumption_token
+        view = self._get_query_view()
 
-        return self.query_resources(offset=token.query_offset(),
+        return self._query_resources(offset=token.query_offset(),
                 count=token.query_count(), view=view,
                 _from=token.query_from(), until=token.query_until())
 
-    def query_resources(self, offset: int, count: int,
+    def _query_resources(self, offset: int, count: int,
             view: Callable[[Callable], Callable], _from: str, until: str):
         return self.ds.list(offset, count, view=view, _from=_from,
                 until=until)
 
     @utils.lazyproperty
     def data(self):
-        self.ensure_datestamps_are_valid()
-        resources = [res for res in self.query_resources_by_token()]
-        if self.current_resumption_token.is_first_page() and is_empty_resultset(resources):
+        self._ensure_datestamps_are_valid()
+        resources = [res for res in self._query_resources_by_token()]
+        if self._current_resumption_token.is_first_page() and is_empty_resultset(resources):
             raise exceptions.NoRecordsMatchError()
 
         return resources
