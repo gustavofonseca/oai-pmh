@@ -64,11 +64,14 @@ Resource = namedtuple('Resource', '''ridentifier datestamp setspec title
 Set = namedtuple('Set', '''setSpec setName''')
 
 
+_REGEXP_LISTRECORDS = r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
+_REGEXP_LISTIDENTIFIERS = r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
+_REGEXP_LISTSETS = r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'
+
+
 class ResumptionToken:
     """Representa uma consulta que produz um conjunto de resultados e a posição
     do cursor dentro desse conjunto de resultados.
-
-    O atributo de classe ``attrs`` contém a lista de dados codificados pelo token.
     
     É importante notar que essa classe é acoplada ao DataStore subjacente,
     principalmente por conta da lógica de paginação. Por esse motivo, deve-se
@@ -76,9 +79,9 @@ class ResumptionToken:
     """
     attrs = ['set', 'from_', 'until', 'offset', 'count', 'metadataPrefix']
     token_patterns = {
-            'ListRecords': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$',
-            'ListIdentifiers': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$',
-            'ListSets': r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$',
+            'ListRecords': _REGEXP_LISTRECORDS,
+            'ListIdentifiers': _REGEXP_LISTIDENTIFIERS,
+            'ListSets': _REGEXP_LISTSETS,
             }
 
     def __init__(self, **kwargs):
