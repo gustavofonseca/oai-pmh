@@ -1,5 +1,6 @@
 import re
 from collections import namedtuple
+from datetime import datetime
 from typing import (
         Type,
         TypeVar,
@@ -64,6 +65,15 @@ Set = namedtuple('Set', '''setSpec setName''')
 
 
 class ResumptionToken:
+    """Representa uma consulta que produz um conjunto de resultados e a posição
+    do cursor dentro desse conjunto de resultados.
+
+    O atributo de classe ``attrs`` contém a lista de dados codificados pelo token.
+    
+    É importante notar que essa classe é acoplada ao DataStore subjacente,
+    principalmente por conta da lógica de paginação. Por esse motivo, deve-se
+    utilizar os métodos prefixados com ``query_`` nas consultas aos dados.
+    """
     attrs = ['set', 'from_', 'until', 'offset', 'count', 'metadataPrefix']
     token_patterns = {
             'ListRecords': r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$',
@@ -77,7 +87,7 @@ class ResumptionToken:
 
     @classmethod
     def new_from_request(cls: Type[TResumptionToken], oairequest: OAIRequest,
-            default_count: int) -> TResumptionToken:
+            default_count: int, default_from: str, default_until: str) -> TResumptionToken:
         """Obtém um ``ResumptionToken`` à partir do ``oairequest``.
 
         Caso o token não seja válido sintaticamente ou o valor do atributo ``count``
@@ -86,69 +96,85 @@ class ResumptionToken:
         ``oairequest``.
         """
         if oairequest.resumptionToken:
-            if not cls.is_valid_oairequest(oairequest):
+            if not cls._is_valid_oairequest(oairequest):
                 raise exceptions.BadResumptionTokenError()
 
             token = cls.decode(oairequest.resumptionToken)
             if int(token.count) != default_count:
                 raise exceptions.BadResumptionTokenError('token count is different than ``oaipmh.listslen``')
         else:
-            token = cls(set=oairequest.set, from_=oairequest.from_,
-                    until=oairequest.until, offset=cls.first_offset(oairequest),
-                    count=str(default_count),
-                    metadataPrefix=oairequest.metadataPrefix)
+            token = cls(set=oairequest.set,
+                        from_=oairequest.from_ or default_from,
+                        until=oairequest.until or default_until,
+                        offset='%s(0)' % (oairequest.from_ or default_from),
+                        count=str(default_count),
+                        metadataPrefix=oairequest.metadataPrefix)
 
         return token
 
-    def has_previous(self):
-        return self.first_offset(self) != self.offset
+    def is_first_page(self):
+        """Retorna ``True`` caso ``self`` seja referente a primeira página de
+        resultados de uma consulta."""
+        return self.offset == ('%s(0)' % self.from_)
 
-    @classmethod
-    def first_offset(cls, timesliceable_object):
-        """Obtém a posição inicial do cursor à partir de um objeto capaz de
-        descrever um intervalo de tempo.
-        """
-        return '%s(0)' % (timesliceable_object.from_ or '1998-01-01')
+    def _lower_limit(self):
+        return self.from_
 
-    def queryable_offset(self):
+    def _upper_limit(self):
+        return self.until
+
+    def query_offset(self):
+        """Tamanho do offset a ser usado na consulta."""
         skip = slice(self.offset.index('(') + 1, -1)
         return int(self.offset[skip])
 
-    def queryable_from(self):
+    def query_from(self):
+        """Data inicial a ser usada na consulta."""
         date = slice(0, 10)
         return self.offset[date]
 
-    def queryable_until(self):
+    def query_until(self):
+        """Data final a ser usada na consulta."""
         year = slice(0, 4)
-        ref_date = self.queryable_from()
-        return ref_date[year] + '-12-31'
+        ref_date = self.query_from()
+        until = ref_date[year] + '-12-31'
+        if self._upper_limit() <= until:
+            return self._upper_limit()
+        else:
+            return until
+
+    def query_count(self):
+        """Quantidade de itens a serem retornados na consulta."""
+        return int(self.count)
 
     @classmethod
     def decode(cls: Type[TResumptionToken], token: str) -> TResumptionToken:
+        """Retorna uma instância de ``cls`` à partir da sua forma
+        codificada."""
         keys = cls.attrs
         values = token.split(':')
         kwargs = dict(zip(keys, values))
         return cls(**kwargs)
 
     @classmethod
-    def is_valid_token(cls: Type[TResumptionToken], token: str,
+    def _is_valid_token(cls: Type[TResumptionToken], token: str,
             pattern: str) -> bool:
         """Se o valor de ``token`` é válido sintaticamente.
         """
         return bool(re.fullmatch(pattern, token))
 
     @classmethod
-    def get_validation_pattern(cls, verb: str) -> str:
+    def _get_validation_pattern(cls, verb: str) -> str:
         try:
             return cls.token_patterns[verb]
         except KeyError:
             raise ValueError() from None
 
     @classmethod
-    def is_valid_oairequest(cls: Type[TResumptionToken],
+    def _is_valid_oairequest(cls: Type[TResumptionToken],
             oairequest: OAIRequest) -> bool:
-        pattern = cls.get_validation_pattern(oairequest.verb)
-        return cls.is_valid_token(oairequest.resumptionToken,
+        pattern = cls._get_validation_pattern(oairequest.verb)
+        return cls._is_valid_token(oairequest.resumptionToken,
                 pattern)
 
     def encode(self) -> str:
@@ -173,20 +199,33 @@ class ResumptionToken:
         parts = [ensure_str(part) for part in token]
         return ':'.join(parts)
 
-    def _incr_offset(self) -> TResumptionToken:
-        """Avança o offset do token.
+    def _incr_offset_size(self) -> TResumptionToken:
+        """Avança o tamanho do deslocamento do offset do token.
         """
         token_map = self._asdict()
-        new_offset = 1 + self.queryable_offset() + int(token_map['count'])
-        token_map['offset'] = '%s(%s)' % (self.queryable_from(), new_offset)
+        new_offset = self.query_offset() + int(token_map['count'])
+        token_map['offset'] = '%s(%s)' % (self.query_from(), new_offset)
         return self.__class__(**token_map)
+
+    def _incr_offset_from(self) -> TResumptionToken:
+        """Avança o ano do offset do token, e zera o tamanho do deslocamento.
+        """
+        token_map = self._asdict()
+        new_from = '%s-01-01' % str(int(self.query_from()[:4]) + 1)
+        token_map['offset'] = '%s(0)' % new_from
+        return self.__class__(**token_map)
+
+    def _has_more_search_space(self) -> bool:
+        return self.query_until() < self._upper_limit()
 
     def next(self, resources: Iterable) -> TResumptionToken:
         """Retorna o próximo resumption token com base no atual e seq de
         ``resources`` resultado da requisição corrente.
         """
         if self._has_more_resources(resources, self.count):
-            return self._incr_offset()
+            return self._incr_offset_size()
+        elif self._has_more_search_space():
+            return self._incr_offset_from()
         else:
             return None
 
@@ -213,5 +252,4 @@ class ResumptionToken:
 
     def __repr__(self):
         return '<%s with values %s>' % (self.__class__.__name__, self._asdict())
-
 

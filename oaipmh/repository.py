@@ -513,7 +513,7 @@ class ResultPage:
         """Resumption token para obter o conjunto de dados atual.
         """
         return self.resumption_token_factory.new_from_request(
-                self.oairequest, self.listslen)
+                self.oairequest, self.listslen, '1998-01-01', '2017-11-07')
 
     def next_resumption_token(self):
         """Resumption token para obter o conjunto de dados subsequente.
@@ -558,11 +558,12 @@ class ResultPage:
             raise exceptions.BadArgumentError('invalid range for datestamps')
 
     def query_resources_by_token(self):
-        token = TokenQueryParams(self.current_resumption_token)
+        token = self.current_resumption_token
         view = self.get_query_view()
 
-        return self.query_resources(token.offset, token.count,
-                view=view, _from=token.from_, until=token.until)
+        return self.query_resources(offset=token.query_offset(),
+                count=token.query_count(), view=view,
+                _from=token.query_from(), until=token.query_until())
 
     def query_resources(self, offset: int, count: int,
             view: Callable[[Callable], Callable], _from: str, until: str):
@@ -573,26 +574,8 @@ class ResultPage:
     def data(self):
         self.ensure_datestamps_are_valid()
         resources = [res for res in self.query_resources_by_token()]
-        if not self.current_resumption_token.has_previous() and is_empty_resultset(resources):
+        if self.current_resumption_token.is_first_page() and is_empty_resultset(resources):
             raise exceptions.NoRecordsMatchError()
 
         return resources
-
-
-class TokenQueryParams:
-    def __init__(self, token):
-        self.token = token
-        self.count = int(token.count)
-
-    @property
-    def offset(self):
-        return self.token.queryable_offset()
-
-    @property
-    def from_(self):
-        return self.token.queryable_from()
-
-    @property
-    def until(self):
-        return self.token.queryable_until()
 
