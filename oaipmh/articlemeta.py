@@ -41,7 +41,7 @@ class SliceableResultSetThriftClient(articlemeta_client.ThriftClient):
         until_date = until_date or datetime.datetime.today().isoformat()[:10]
 
         try:
-            LOGGER.debug('querying "client.get_article_identifiers" with params'
+            LOGGER.debug('querying ArticleMeta backend using params'
                          ' "collection=%s", "issn=%s", "from_date=%s",'
                          ' "until_date=%s", "limit=%s", "offset=%s",'
                          ' "extra_filter=%s"', collection, issn, from_date,

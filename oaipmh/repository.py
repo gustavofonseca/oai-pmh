@@ -429,17 +429,20 @@ class Repository:
                 view=view, _from=token.from_, until=token.until)
         return resources
 
+    def _resultpage(self, oairequest: OAIRequest):
+        return RecordsResultPage(oairequest=oairequest, ds=self.ds,
+                setsreg=self.setsreg, listslen=self.listslen,
+                granularity_validator=self.granularity_validator,
+                earliest_datestamp=self.metadata.earliestDatestamp,
+                resumption_token_factory=self.resumption_token_factory)
+
     @check_request_args(check_listrecords_args)
     def list_records(self, oairequest: OAIRequest) -> bytes:
         if not oairequest.resumptionToken:
             if oairequest.metadataPrefix not in self.formats:
                 raise exceptions.CannotDisseminateFormatError()
 
-        resultpage = ResultPage(oairequest=oairequest, ds=self.ds,
-                setsreg=self.setsreg, listslen=self.listslen,
-                granularity_validator=self.granularity_validator,
-                earliest_datestamp=self.metadata.earliestDatestamp,
-                resumption_token_factory=self.resumption_token_factory)
+        resultpage = self._resultpage(oairequest)
         fmt = resultpage.select_format(self.formats)
         resources = [fmt['augmenter'](r) for r in resultpage.data]
 
@@ -453,11 +456,10 @@ class Repository:
             if oairequest.metadataPrefix not in self.formats:
                 raise exceptions.CannotDisseminateFormatError()
 
-        token = self.resumption_token_factory.new_from_request(
-                oairequest, self.listslen)
-        resources = list(self.query_resources_by_token(token))
+        resultpage = self._resultpage(oairequest)
+        resources = resultpage.data
 
-        next_token = token.next(resources)
+        next_token = resultpage.next_resumption_token()
         return serialize_list_identifiers(self.metadata, oairequest, resources,
                 next_token)
 
@@ -500,7 +502,7 @@ def now_datestamp():
     return datetime.today().isoformat()[:10]
 
 
-class ResultPage:
+class RecordsResultPage:
     """Representa uma página de resultados de uma consulta.
     """
     def __init__(self, oairequest: OAIRequest, ds:datastores.DataStore,
