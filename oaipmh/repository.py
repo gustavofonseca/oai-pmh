@@ -376,18 +376,6 @@ class Repository:
             raise exceptions.IdDoesNotExistError('could not fetch resource with'
                     ' ridentifier: "%s"' % ridentifier)
 
-    def query_resources(self, offset: int, count: int,
-            view: Callable[[Callable], Callable], _from: str, until: str):
-        """Consulta recursos ou levanta exceção ``exceptions.NoRecordsMatchError``.
-        """
-        resources = self.ds.list(offset, count, view=view, _from=_from,
-                until=until)
-        resources, temp_resources = itertools.tee(resources, 2)
-        if is_empty_resultset(temp_resources):
-            raise exceptions.NoRecordsMatchError()
-        else:
-            return resources
-
     def resource_exists(self, ridentifier: str) -> bool:
         try:
             _ = self.fetch_resource(ridentifier)
@@ -409,27 +397,6 @@ class Repository:
         resource = fmt['augmenter'](self.fetch_resource(oairequest.identifier))
         return serialize_get_record(self.metadata, oairequest, resource,
                 metadata_formatter=fmt['formatter'])
-
-    def query_resources_by_token(self, token: ResumptionToken):
-        if token.set:
-            view = self.setsreg.get_view(token.set)
-            if view is None:
-                raise exceptions.BadArgumentError('cannot find a view for set "%s"', token.set)
-        else:
-            view = None
-
-        if token.from_ and not self.granularity_validator(token.from_):
-            raise exceptions.BadArgumentError('invalid granularity')
-
-        if token.until and not self.granularity_validator(token.until):
-            raise exceptions.BadArgumentError('invalid granularity')
-
-        if (token.from_ and token.until) and (token.from_ > token.until):
-            raise exceptions.BadArgumentError('invalid range for datestamps')
-
-        resources = self.query_resources(int(token.offset), int(token.count),
-                view=view, _from=token.from_, until=token.until)
-        return resources
 
     def _resultpage(self, oairequest: OAIRequest):
         return RecordsResultPage(oairequest=oairequest, ds=self.ds,
