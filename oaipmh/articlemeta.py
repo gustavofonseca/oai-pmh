@@ -46,8 +46,8 @@ class SliceableResultSetThriftClient(articlemeta_client.ThriftClient):
                          ' "until_date=%s", "limit=%s", "offset=%s",'
                          ' "extra_filter=%s"', collection, issn, from_date,
                          until_date, limit, offset, extra_filter)
-            with self.client_context() as client:
-                identifiers = client.get_article_identifiers(
+
+            identifiers = self.dispatcher('get_article_identifiers',
                     collection=collection, issn=issn,
                     from_date=from_date, until_date=until_date,
                     limit=limit, offset=offset,
