@@ -1,4 +1,5 @@
 import re
+import abc
 from collections import namedtuple
 from datetime import datetime
 from typing import (
@@ -64,29 +65,132 @@ Resource = namedtuple('Resource', '''ridentifier datestamp setspec title
 Set = namedtuple('Set', '''setSpec setName''')
 
 
-_REGEXP_LISTRECORDS = r'^([\w-]+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
-_REGEXP_LISTIDENTIFIERS = r'^(\w+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$'
-_REGEXP_LISTSETS = r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$'
-
-
-class ResumptionToken:
-    """Representa uma consulta que produz um conjunto de resultados e a posição
-    do cursor dentro desse conjunto de resultados.
-    
-    É importante notar que essa classe é acoplada ao DataStore subjacente,
-    principalmente por conta da lógica de paginação. Por esse motivo, deve-se
-    utilizar os métodos prefixados com ``query_`` nas consultas aos dados.
-    """
+class ResumptionToken(metaclass=abc.ABCMeta):
     attrs = ['set', 'from_', 'until', 'offset', 'count', 'metadataPrefix']
-    token_patterns = {
-            'ListRecords': _REGEXP_LISTRECORDS,
-            'ListIdentifiers': _REGEXP_LISTIDENTIFIERS,
-            'ListSets': _REGEXP_LISTSETS,
-            }
+    token_patterns = {}  # deve ser sobrescrito na subclasse.
 
     def __init__(self, **kwargs):
         for attr in self.attrs:
             setattr(self, attr, kwargs.get(attr, None))
+
+    @abc.abstractmethod
+    def is_first_page(self):
+        """Retorna ``True`` caso ``self`` seja referente a primeira página de
+        resultados de uma consulta."""
+        return NotImplemented
+    
+    @abc.abstractmethod
+    def query_offset(self):
+        """Tamanho do offset a ser usado na consulta."""
+        return NotImplemented
+
+    @abc.abstractmethod
+    def query_from(self):
+        """Data inicial a ser usada na consulta."""
+        return NotImplemented
+
+    @abc.abstractmethod
+    def query_until(self):
+        """Data final a ser usada na consulta."""
+        return NotImplemented
+
+    def query_count(self):
+        """Quantidade de itens a serem retornados na consulta."""
+        return int(self.count)
+
+    @classmethod
+    def decode(cls: Type[TResumptionToken], token: str) -> TResumptionToken:
+        """Retorna uma instância de ``cls`` à partir da sua forma
+        codificada."""
+        keys = cls.attrs
+        values = token.split(':')
+        kwargs = dict(zip(keys, values))
+        return cls(**kwargs)
+
+    def encode(self) -> str:
+        """Codifica o token em string delimitada por ``:``.
+
+        Durante a codificação, todos os valores serão transformados em ``str``.
+        ``None`` será transformado em string vazia. 
+
+        É importante ter em mente que o processo de codificação faz com que os
+        tipos originais dos valores sejam perdidos, i.e., não é um processo
+        reversível.
+        """
+        def ensure_str(obj):
+            if obj is None:
+                return ''
+            else:
+                try:
+                    return str(obj)
+                except:
+                    return ''
+        token = [getattr(self, attr) for attr in self.attrs]
+        parts = [ensure_str(part) for part in token]
+        return ':'.join(parts)
+
+    @abc.abstractmethod
+    def next(self, resources: Iterable) -> TResumptionToken:
+        """Retorna o próximo resumption token com base no atual e seq de
+        ``resources`` resultado da requisição corrente.
+        """
+        return NotImplemented
+
+    def _has_more_resources(self, resources: Iterable, batch_size: int) -> bool:
+        """Verifica se ``resources`` completa a lista de recursos.
+
+        Se a quantidade de itens em ``resources`` for menor do que ``batch_size``, 
+        consideramos se tratar do último conjunto de resultados. Caso a 
+        quantidade seja igual, consideramos que existirá o próximo conjunto.
+        """
+        return len(resources) == int(batch_size)
+
+    @classmethod
+    def _is_valid_token(cls: Type[TResumptionToken], token: str,
+            pattern: str) -> bool:
+        """Se o valor de ``token`` é válido sintaticamente.
+        """
+        return bool(re.fullmatch(pattern, token))
+
+    @classmethod
+    def _get_validation_pattern(cls, verb: str) -> str:
+        try:
+            return cls.token_patterns[verb]
+        except KeyError:
+            raise ValueError() from None
+
+    @classmethod
+    def _is_valid_oairequest(cls: Type[TResumptionToken],
+            oairequest: OAIRequest) -> bool:
+        pattern = cls._get_validation_pattern(oairequest.verb)
+        return cls._is_valid_token(oairequest.resumptionToken,
+                pattern)
+
+    def _asdict(self) -> dict:
+        """Atua como uma ``namedtuple``, na produção de um dicionário à partir
+        de si mesmo.
+        """
+        return {attr: getattr(self, attr) for attr in self.attrs}
+
+    def __hash__(self):
+        return hash((self.__class__, self.encode()))
+
+    def __eq__(self, obj):
+        return hash(self) == hash(obj)
+
+    def __repr__(self):
+        return '<%s with values %s>' % (self.__class__.__name__, self._asdict())
+
+
+class ChunkedResumptionToken(ResumptionToken):
+    """É um token que representa a iteração em uma sequência de registros por
+    meio de sucessivas iterações em blocos com sequências menores.
+    """
+    token_patterns = {
+            'ListRecords': r'^([\w-]+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$',
+            'ListIdentifiers': r'^([\w-]+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:(\d{4})-(\d{2})-(\d{2})\(\d+\):\d+:\w+$',
+            'ListSets': r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$',
+            }
 
     @classmethod
     def new_from_request(cls: Type[TResumptionToken], oairequest: OAIRequest,
@@ -146,62 +250,6 @@ class ResumptionToken:
         else:
             return until
 
-    def query_count(self):
-        """Quantidade de itens a serem retornados na consulta."""
-        return int(self.count)
-
-    @classmethod
-    def decode(cls: Type[TResumptionToken], token: str) -> TResumptionToken:
-        """Retorna uma instância de ``cls`` à partir da sua forma
-        codificada."""
-        keys = cls.attrs
-        values = token.split(':')
-        kwargs = dict(zip(keys, values))
-        return cls(**kwargs)
-
-    @classmethod
-    def _is_valid_token(cls: Type[TResumptionToken], token: str,
-            pattern: str) -> bool:
-        """Se o valor de ``token`` é válido sintaticamente.
-        """
-        return bool(re.fullmatch(pattern, token))
-
-    @classmethod
-    def _get_validation_pattern(cls, verb: str) -> str:
-        try:
-            return cls.token_patterns[verb]
-        except KeyError:
-            raise ValueError() from None
-
-    @classmethod
-    def _is_valid_oairequest(cls: Type[TResumptionToken],
-            oairequest: OAIRequest) -> bool:
-        pattern = cls._get_validation_pattern(oairequest.verb)
-        return cls._is_valid_token(oairequest.resumptionToken,
-                pattern)
-
-    def encode(self) -> str:
-        """Codifica o token em string delimitada por ``:``.
-
-        Durante a codificação, todos os valores serão transformados em ``str``.
-        ``None`` será transformado em string vazia. 
-
-        É importante ter em mente que o processo de codificação faz com que os
-        tipos originais dos valores sejam perdidos, i.e., não é um processo
-        reversível.
-        """
-        def ensure_str(obj):
-            if obj is None:
-                return ''
-            else:
-                try:
-                    return str(obj)
-                except:
-                    return ''
-        token = [getattr(self, attr) for attr in self.attrs]
-        parts = [ensure_str(part) for part in token]
-        return ':'.join(parts)
-
     def _incr_offset_size(self) -> TResumptionToken:
         """Avança o tamanho do deslocamento do offset do token.
         """
@@ -232,27 +280,72 @@ class ResumptionToken:
         else:
             return None
 
-    def _has_more_resources(self, resources: Iterable, batch_size: int) -> bool:
-        """Verifica se ``resources`` completa a lista de recursos.
 
-        Se a quantidade de itens em ``resources`` for menor do que ``batch_size``, 
-        consideramos se tratar do último conjunto de resultados. Caso a 
-        quantidade seja igual, consideramos que existirá o próximo conjunto.
+class PlainResumptionToken(ResumptionToken):
+    """É um token que representa a iteração em uma sequência de registros por
+    meio do deslocamento do *offset*.
+    """
+    token_patterns = {
+            'ListRecords': r'^([\w-]+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$',
+            'ListIdentifiers': r'^([\w-]+)?:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:\w+$',
+            'ListSets': r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$',
+            }
+
+    @classmethod
+    def new_from_request(cls: Type[TResumptionToken], oairequest: OAIRequest,
+            default_count: int) -> TResumptionToken:
+        """Obtém um ``ResumptionToken`` à partir do ``oairequest``.
+
+        Caso o token não seja válido sintaticamente ou o valor do atributo ``count``
+        seja diferente de ``default_count``, levanta a exceção ``BadResumptionToken``;
+        Retorna um novo ``ResumptionToken`` caso não haja um codificado no
+        ``oairequest``.
         """
-        return len(resources) == int(batch_size)
+        if oairequest.resumptionToken:
+            if not cls._is_valid_oairequest(oairequest):
+                raise exceptions.BadResumptionTokenError()
 
-    def _asdict(self) -> dict:
-        """Atua como uma ``namedtuple``, na produção de um dicionário à partir
-        de si mesmo.
+            token = cls.decode(oairequest.resumptionToken)
+            if int(token.count) != default_count:
+                raise exceptions.BadResumptionTokenError('token count is different than ``oaipmh.listslen``')
+        else:
+            token = cls(set=oairequest.set, from_=oairequest.from_,
+                    until=oairequest.until, offset='0', count=str(default_count),
+                    metadataPrefix=oairequest.metadataPrefix)
+
+        return token
+
+    def is_first_page(self):
+        """Retorna ``True`` caso ``self`` seja referente a primeira página de
+        resultados de uma consulta."""
+        return self.offset == '0'
+
+    def next(self, resources: Iterable) -> TResumptionToken:
+        """Retorna o próximo resumption token com base no atual e seq de
+        ``resources`` resultado da requisição corrente.
         """
-        return {attr: getattr(self, attr) for attr in self.attrs}
+        if self._has_more_resources(resources, self.count):
+            return self._incr_offset()
+        else:
+            return None
 
-    def __hash__(self):
-        return hash((self.__class__, self.encode()))
+    def _incr_offset(self) -> TResumptionToken:
+        """Avança o offset do token.
+        """
+        token_map = self._asdict()
+        new_offset = int(token_map['offset']) + int(token_map['count'])
+        token_map['offset'] = str(new_offset)
+        return self.__class__(**token_map)
 
-    def __eq__(self, obj):
-        return hash(self) == hash(obj)
+    def query_from(self):
+        """Data inicial a ser usada na consulta."""
+        return self.from_
 
-    def __repr__(self):
-        return '<%s with values %s>' % (self.__class__.__name__, self._asdict())
+    def query_until(self):
+        """Data final a ser usada na consulta."""
+        return self.until
+
+    def query_offset(self):
+        """Tamanho do offset a ser usado na consulta."""
+        return int(self.offset)
 

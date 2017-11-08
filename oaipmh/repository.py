@@ -22,6 +22,8 @@ from .entities import (
         OAIRequest,
         MetadataFormat,
         ResumptionToken,
+        ChunkedResumptionToken,
+        PlainResumptionToken,
         )
 
 
@@ -293,7 +295,7 @@ class Repository:
     def __init__(self, metadata: RepositoryMeta, ds: datastores.DataStore,
             setsreg: sets.SetsRegistry, listslen: int,
             granularity_validator: Callable,
-            resumption_token_factory=ResumptionToken):
+            resumption_token_factory=ChunkedResumptionToken):
         self.metadata = metadata
         self.ds = ds
         self.setsreg = setsreg
@@ -473,9 +475,10 @@ class Repository:
 
     @check_request_args(check_listsets_args)
     def list_sets(self, oairequest: OAIRequest) -> bytes:
-        token = self.resumption_token_factory.new_from_request(
+        token = PlainResumptionToken.new_from_request(
                 oairequest, self.listslen)
-        sets_list = list(self.setsreg.list(int(token.offset), int(token.count)))
+        sets_list = list(self.setsreg.list(token.query_offset(),
+            token.query_count()))
         next_token = token.next(sets_list)
         return serialize_list_sets(self.metadata, oairequest, sets_list,
                 next_token)
@@ -509,7 +512,7 @@ class RecordsResultPage:
             setsreg: sets.SetsRegistry, listslen: int,
             granularity_validator: Callable,
             earliest_datestamp: str,
-            resumption_token_factory=ResumptionToken,
+            resumption_token_factory=ChunkedResumptionToken,
             make_default_until=now_datestamp):
         self.oairequest = oairequest
         self.ds = ds
