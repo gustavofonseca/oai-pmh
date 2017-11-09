@@ -8,7 +8,10 @@ from typing import (
         Iterable,
         )
 
-from . import exceptions
+from . import (
+        exceptions,
+        utils,
+        )
 
 
 # serve apenas para type-hinting:
@@ -72,6 +75,14 @@ class ResumptionToken(metaclass=abc.ABCMeta):
     def __init__(self, **kwargs):
         for attr in self.attrs:
             setattr(self, attr, kwargs.get(attr, None))
+
+        self._post_init(**kwargs)
+
+    def _post_init(self, **kwargs):
+        """Ponto de extensão para subclasses executarem código na inicialização
+        da instância.
+        """
+        return None
 
     @abc.abstractmethod
     def is_first_page(self):
@@ -192,6 +203,13 @@ class ChunkedResumptionToken(ResumptionToken):
             'ListSets': r'^:((\d{4})-(\d{2})-(\d{2}))?:((\d{4})-(\d{2})-(\d{2}))?:\d+:\d+:$',
             }
 
+    def _post_init(self, **kwargs):
+        """
+        :param chunk_size: (opcional) é o número de meses que comporão cada
+        bloco de interações.
+        """
+        self.chunk_size = kwargs.get('chunk_size', 4)
+
     @classmethod
     def new_from_request(cls: Type[TResumptionToken], oairequest: OAIRequest,
             default_count: int, default_from: str, default_until: str) -> TResumptionToken:
@@ -230,6 +248,14 @@ class ChunkedResumptionToken(ResumptionToken):
     def _upper_limit(self):
         return self.until
 
+    def _until_month(self):
+        month = slice(5, 7)
+        
+        ref_date = self.query_from()
+        until_month = (int(ref_date[month]) + self.chunk_size) - 1
+        until_month = 12 if until_month > 12 else until_month
+        return until_month
+
     def query_offset(self):
         """Tamanho do offset a ser usado na consulta."""
         skip = slice(self.offset.index('(') + 1, -1)
@@ -243,8 +269,13 @@ class ChunkedResumptionToken(ResumptionToken):
     def query_until(self):
         """Data final a ser usada na consulta."""
         year = slice(0, 4)
+        
         ref_date = self.query_from()
-        until = ref_date[year] + '-12-31'
+        until_month = self._until_month()
+
+        until_month_lastday = utils.lastdayofmonth(ref_date[year], until_month)
+        until = '%s-%s-%s' % (ref_date[year], until_month, until_month_lastday)
+
         if self._upper_limit() <= until:
             return self._upper_limit()
         else:

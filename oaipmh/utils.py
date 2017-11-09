@@ -1,4 +1,6 @@
 import datetime
+import calendar
+import itertools
 
 
 def parse_date(datestamp):
@@ -24,4 +26,15 @@ class lazyproperty:
             value = self.func(instance)
             setattr(instance, self.func.__name__, value)
             return value
+
+
+def lastdayofmonth(year, month):
+    """Retorna o último dia do mês em determinado ano.
+    """
+    try:
+        days = list(calendar.Calendar().itermonthdays(int(year), int(month)))
+    except calendar.IllegalMonthError:
+        raise ValueError('illegal month: %s' % month)
+
+    return next(itertools.dropwhile(lambda x: x == 0, reversed(days)))
 
